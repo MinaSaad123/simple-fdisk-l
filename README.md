@@ -5,9 +5,10 @@ this REPO is established to be a place where i can reserve my simple fdisk -l co
 simple fdisk -l until know support parsing:
 - [x] MBR
 - [x] EBR in the extended partition
-- [ ] GPT
+- [x] GPT
 
-  
+## MBR partition table parsing  
 ![Image](https://i.imgur.com/NrTt0ls.png)
 
-GPT in progress.....
+## GPT partition table parsing  
+![Image](https://i.imgur.com/QkJYchd.png)
