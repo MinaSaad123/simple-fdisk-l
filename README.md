@@ -11,4 +11,4 @@ simple fdisk -l until know support parsing:
 ![Image](https://i.imgur.com/NrTt0ls.png)
 
 ## GPT partition table parsing  
-![Image](https://i.imgur.com/QkJYchd.png)
+![Image](https://i.imgur.com/2MzOxBG.png)
