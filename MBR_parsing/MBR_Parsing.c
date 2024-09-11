@@ -10,7 +10,9 @@
 //				                    User define datatype
 //=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
 
-//=================================<partition table typedef>
+//No need for packing compiler directive\\
+
+//=================================<MBR partition table typedef>
 typedef struct 
 {
 	uint8_t Active;
@@ -21,6 +23,17 @@ typedef struct
 	uint32_t NumOfSectors;	
 
 } PartitionTable_Entry_t;
+
+typedef struct
+{
+	uint64_t PartitionType[2];
+	uint64_t UniquePartitionGUID[2];
+	uint64_t FirstLBA;
+	uint64_t SecondLBA;
+	uint64_t AttributeFlag;
+	uint64_t PartitionName[9];
+
+} GPT_PartitionEntry_t;
 
 //================================<Type Typedef>
 typedef enum
@@ -36,7 +49,6 @@ typedef enum
 //				                          Macros
 //=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=*=
 #define Sector_Size   512
-#define PATH "/dev/nvme1n1"
 //=========================================================================================
 
 
@@ -48,9 +60,11 @@ void main(int argc, char** argv)
 	char buf[Sector_Size];
 	char Buffer[200];
 	int fd = 0, i = 0, flag = 0, c = 5;
-	PartitionTable_Entry_t* EntryX = NULL;
-	const char* format1 = "%-15s %-15s %-15s %-15s %-15s %-15s %-15s";
-	const char* format2 = "%s%-9d %-15c %-15u %-15u %-15u %-15u";
+	PartitionTable_Entry_t* MBR_EntryX = NULL;
+	const char* MBR_format1 = "%-15s %-15s %-15s %-15s %-15s %-15s %-15s";
+	const char* GPT_format1 = "%-15s %-15s %-15s %-15s %-15s";
+	const char* MBR_format2 = "%s%-9d %-15c %-15u %-15u %-15u %-15u";
+	const char* GPT_format2 = "%s%-9d %-15u %-15u %-15u %-15u";
 	uint32_t Selector_Counter = 0, Extended_StartSector = 0;
 
 	if (argc <  1)
@@ -63,41 +77,75 @@ void main(int argc, char** argv)
 		return;
 	}
 	
-	if( ( fd = open(PATH, O_RDONLY) ) == -1)
+	if( ( fd = open(argv[1], O_RDONLY) ) == -1 )
 	{
 		perror("open");
 		return;
 	}
 
-	if ( read(fd, buf, sizeof(buf)) == -1)
+	if ( read(fd, buf, sizeof(buf)) == -1 )
 	{
 		perror("read");
 		return;
 	}
 	
-	EntryX = (PartitionTable_Entry_t*)&buf[446];
+	MBR_EntryX = (PartitionTable_Entry_t*)&buf[446];
 
-	if ( EntryX->Type == GPT_Protective) //Partition type is GPT
+	if ( MBR_EntryX->Type == GPT_Protective) //Partition type is GPT
 	{
-		//todo
+		GPT_PartitionEntry_t* GPT_EntryX = (GPT_PartitionEntry_t*)&buf;
+
+		if (lseek(fd, ( (uint64_t)2 ) * Sector_Size, SEEK_SET) == -1)
+		{
+			perror("lseek");
+			fclose(fd);
+			return;
+		}
+
+		if ( read(fd, buf, sizeof(buf)) == -1 ) //For right now buf size is enough
+		{
+			perror("read");
+			return;
+		}
+
+		snprintf(Buffer, sizeof(Buffer), GPT_format1, "Device", "Start", "End", "Sectors", "Size");
+		printf("%s\n",Buffer);
+
+		while (GPT_EntryX->FirstLBA != 0)
+		{
+			snprintf(Buffer, sizeof(Buffer), GPT_format2, 
+					"nvme1np",
+			    	i + 1,
+			    	GPT_EntryX->FirstLBA,
+			    	GPT_EntryX->SecondLBA,
+			    	GPT_EntryX->SecondLBA - GPT_EntryX->FirstLBA + 1,
+			    	( (uint64_t)( (GPT_EntryX->SecondLBA - GPT_EntryX->FirstLBA + 1) * Sector_Size ) / (1024 * 1024 * 1024) ) );
+
+			printf("%s\n", Buffer);
+			
+			++GPT_EntryX;
+			++i;
+		}
+
+	
 	
 	} else  //Partion Type is MBR
 	{
-		snprintf(Buffer, sizeof(Buffer), format1, "Device", "Boot", "Start", "End", "Sectors", "Size", "Type");
+		snprintf(Buffer, sizeof(Buffer), MBR_format1, "Device", "Boot", "Start", "End", "Sectors", "Size", "Type");
 		printf("%s\n",Buffer);
 
 		for (i = 0; i < 4; ++i)
 		{
-			if (EntryX[i].NumOfSectors != 0)
+			if (MBR_EntryX[i].NumOfSectors != 0)
 			{
-				snprintf(Buffer, sizeof(Buffer), format2, 
-				"nvme1n",
+				snprintf(Buffer, sizeof(Buffer), MBR_format2, 
+				"nvme1np",
 			    i + 1,
-			    EntryX[i].Active == 0x80 ? '*' : ' ',
-			    EntryX[i].Start_Sector,
-			    EntryX[i].Start_Sector + EntryX[i].NumOfSectors - 1,
-			    EntryX[i].NumOfSectors,
-			    ( ( (uint64_t)EntryX[i].NumOfSectors * Sector_Size ) / (1024 * 1024 * 1024) ) );
+			    MBR_EntryX[i].Active == 0x80 ? '*' : ' ',
+			    MBR_EntryX[i].Start_Sector,
+			    MBR_EntryX[i].Start_Sector + MBR_EntryX[i].NumOfSectors - 1,
+			    MBR_EntryX[i].NumOfSectors,
+			    ( ( (uint64_t)MBR_EntryX[i].NumOfSectors * Sector_Size ) / (1024 * 1024 * 1024) ) );
 
 			printf("%s\n", Buffer);
 
@@ -107,7 +155,7 @@ void main(int argc, char** argv)
 		i = 0;
 		while ( i < 4 )
 		{
-			if (EntryX[i].Type == 0x05)
+			if (MBR_EntryX[i].Type == 0x05)
 			{
 				flag = 1;
 				break;
@@ -116,12 +164,12 @@ void main(int argc, char** argv)
 			++i;
 		}
 
-		Selector_Counter = EntryX[i].Start_Sector;
+		Selector_Counter = MBR_EntryX[i].Start_Sector;
 		Extended_StartSector = Selector_Counter;
 
 		if ( flag == 1 ) /*there is a extended partition*/
 		{
-			while ( EntryX[i].NumOfSectors != 0 )
+			while ( MBR_EntryX[i].NumOfSectors != 0 )
 			{
 				if (lseek(fd, ( (uint64_t)Selector_Counter) * Sector_Size, SEEK_SET) == -1)
 				{
@@ -136,23 +184,23 @@ void main(int argc, char** argv)
 					return;
 				}
 
-				EntryX = ( PartitionTable_Entry_t* )&buf[446];
+				MBR_EntryX = ( PartitionTable_Entry_t* )&buf[446];
 			
-				snprintf(Buffer, sizeof(Buffer), format2, 
+				snprintf(Buffer, sizeof(Buffer), MBR_format2, 
 						"nvme1n",
 			        	c,
-			        	EntryX->Active == 0x80 ? '*' : ' ',
-			        	EntryX->Start_Sector + Selector_Counter,
-			        	EntryX->Start_Sector + Selector_Counter + EntryX->NumOfSectors - 1,
-			        	EntryX->NumOfSectors,
-			        	( ( (uint64_t)(EntryX->NumOfSectors) * Sector_Size ) / (1024 * 1024 * 1024) ) );
+			        	MBR_EntryX->Active == 0x80 ? '*' : ' ',
+			        	MBR_EntryX->Start_Sector + Selector_Counter,
+			        	MBR_EntryX->Start_Sector + Selector_Counter + MBR_EntryX->NumOfSectors - 1,
+			        	MBR_EntryX->NumOfSectors,
+			        	( ( (uint64_t)(MBR_EntryX->NumOfSectors) * Sector_Size ) / (1024 * 1024 * 1024) ) );
 
 				printf("%s\n", Buffer);
 				c++; //increase partition number.
 
-				if ( EntryX[1].NumOfSectors != 0)
+				if ( MBR_EntryX[1].NumOfSectors != 0)
 				{
-					Selector_Counter = Extended_StartSector + EntryX[1].NumOfSectors;
+					Selector_Counter = Extended_StartSector + MBR_EntryX[1].NumOfSectors;
 					i= 0;
 
 				} else
